@@ -1,0 +1,58 @@
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const { Pool } = require('pg');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+const port = 5000;
+
+const pool = new Pool({
+    user: 'postgres',
+    host: 'localhost',
+    database: 'myapp',
+    password: 'Dany@789',
+    port: 5432
+});
+
+let currentToken = 'T-101';
+
+app.use(express.json());
+
+app.get('/patients', async (req, res) => {
+    const query = 'SELECT * FROM patients';
+
+    try {
+        const { rows } = await pool.query(query);
+        res.send(rows);
+    } catch (error) {
+        console.log(error);
+        res.status(500).send('Error fetching patients');
+    }
+});
+
+app.post('/patients', async (req, res) => {
+    const { name, phone } = req.body;
+    const query = 'INSERT INTO patients (name, phone, token) VALUES ($1, $2, $3) RETURNING token';
+
+    try {
+        const { rows } = await pool.query(query, [name, phone, currentToken]);
+        currentToken = getNextToken(currentToken);
+        io.emit('tokenChange', currentToken);
+        res.send(rows[0].token);
+    } catch (error) {
+        console.log(error);
+        res.status(500).send('Error adding patient');
+    }
+});
+
+app.get('/currentToken', (req, res) => {
+    res.send(currentToken);
+});
+
+function getNextToken(token) {
+    const letter = token.charAt(0);
+    const number = parseInt(token.substring(2));
+    const nextNumber = number + 1;
+    return `${letter}-${nextNumber.toString().padStart(3, '0')
